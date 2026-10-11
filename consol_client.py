@@ -1,6 +1,6 @@
 import socket
 from threading import Thread
-from messenger import Messenger
+from msg_handler import MessageProtocol as Messenger
 
 
 class ServerListener(Thread):
@@ -16,7 +16,7 @@ class ServerListener(Thread):
                 if not msg:
                     print("Соеденение потеряно")
                     break
-                print(f"{msg["user"]}: {msg["text"]}")
+                print(f"{msg['user']}: {msg['text']}")
         except Exception as e:
             print(e)
 
@@ -61,7 +61,7 @@ class ChatClient:
         try:
             while True:
                 msg = self.messenger.get()
-                print(f"{msg["user"]}: {msg["text"]}")
+                print(f"{msg['user']}: {msg['text']}")
                 username = input("Введите своё имя: ")
                 self.messenger.send({"user": username})
                 msg = self.messenger.get()
