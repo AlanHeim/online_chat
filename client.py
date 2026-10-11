@@ -32,8 +32,7 @@ class ServerListener(Thread):
 
 class ChatClient:
     """Главный контейнер клиента, управляющий подключением и отправкой."""
-    #HOST = '127.0.0.1'
-    HOST = '185.69.125.229'
+    HOST = '127.0.0.1'
     PORT = 5000
 
     def __init__(self, on_message_cb: Callable, on_error_cb: Callable):
