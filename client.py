@@ -1,15 +1,15 @@
-import socket
 from typing import Callable
 from threading import Thread
-from msg_handler import MessageProtocol
+from websockets.sync.client import connect
+from network_core import MessageProtocol
 
 
 class ServerListener(Thread):
     """Контейнер, отвечающий ТОЛЬКО за фоновое чтение сообщений от сервера."""
 
     def __init__(self, msg_protocol: MessageProtocol,
-                 on_message_cb: Callable,  # функция для вывода сообщений
-                 on_error_cb: Callable  # для вывода сообщений об ошибках
+                 on_message_cb: Callable,
+                 on_error_cb: Callable
                  ):
         super().__init__()
         self.messenger = msg_protocol
@@ -31,27 +31,29 @@ class ServerListener(Thread):
 
 
 class ChatClient:
-    """Главный контейнер клиента, управляющий подключением и отправкой."""
-    #HOST = '127.0.0.1'
-    HOST = '185.69.125.229'
+    """Главный контейнер клиента, управляющий подключением и отправкой через WebSocket."""
+    HOST = '127.0.0.1'
     PORT = 5000
 
     def __init__(self, on_message_cb: Callable, on_error_cb: Callable):
         self.username = None
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Формируем стандартный URL для протокола WebSocket
+        self.ws_url = f"ws://{self.HOST}:{self.PORT}/"
+        self.ws_conn = None
         self.messenger: MessageProtocol | None = None
 
         self.on_message = on_message_cb
         self.on_error = on_error_cb
 
-        self.is_connected = False  # есть ли связь с сервером
+        self.is_connected = False
 
     def initial_connect(self, on_login_msg_cb: Callable) -> bool:
-        """Попытка создать подключение (либо проверка, есть ли оно) """
+        """Попытка создать подключение (либо проверка, есть ли оно)"""
         try:
             if not self.is_connected:
-                self.socket.connect((self.HOST, self.PORT))
-                self.messenger = MessageProtocol(self.socket)
+                # connect открывает TCP-канал, шлет HTTP Upgrade и включает маскирование фреймов
+                self.ws_conn = connect(self.ws_url)
+                self.messenger = MessageProtocol(self.ws_conn)
 
                 msg = self.messenger.get()
                 if msg:
@@ -82,12 +84,12 @@ class ChatClient:
             return False
 
     def start_listen_chat(self):
-        """запуск слушателя"""
+        """Запуск слушателя"""
         listener = ServerListener(self.messenger, self.on_message, self.on_error)
         listener.start()
 
     def send_message(self, text: str):
-        """отправка обычного сообщения в чат"""
+        """Отправка обычного сообщения в чат"""
         if self.messenger and text.strip():
             try:
                 msg = {"user": self.username, "text": text}
@@ -96,7 +98,7 @@ class ChatClient:
                 self.on_error(f"Не удалось отправить сообщение: {e}")
 
     def close(self):
-        """Корректное закрытие протокола и сокета."""
+        """Корректное закрытие протокола."""
         if self.messenger:
             self.messenger.close()
-
+            self.is_connected = False

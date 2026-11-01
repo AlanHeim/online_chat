@@ -1,9 +1,10 @@
-from serializer import Serializer
-from transport import TransportProtocol
+from .serializer import Serializer
+from .transport import TransportProtocol
+
 
 class MessageProtocol:
-    def __init__(self, conn):
-        self.tp = TransportProtocol(conn)
+    def __init__(self, ws):
+        self.tp = TransportProtocol(ws)
 
     def get(self) -> dict | bool:
         """вернёт сообщение или ложь"""
@@ -22,4 +23,5 @@ class MessageProtocol:
             pass
 
     def close(self):
+        """закрывает соединение на уровне websocket"""
         self.tp.close()

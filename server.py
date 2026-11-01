@@ -1,15 +1,17 @@
-import socket
 from threading import Thread, Lock
-from msg_handler import MessageProtocol
+from websockets.sync.server import serve
+from network_core import MessageProtocol
 
 
 class ClientHandler(Thread):
-    """Контролирует подключение одного клиента к серверу"""
-    def __init__(self, conn, addr, server):
+    """Контролирует подключение одного клиента к серверу."""
+
+    def __init__(self, ws_conn, addr, server: 'ChatServer'):
         super().__init__()
         self.server = server
         self.addr = addr
-        self.messenger = MessageProtocol(conn)
+        # Передаем готовое WebSocket-соединение в MessageProtocol
+        self.messenger = MessageProtocol(ws_conn)
         self.daemon = True
         self.username: str | None = None
 
@@ -22,12 +24,11 @@ class ClientHandler(Thread):
                     msg = self.messenger.get()
                     if not msg:
                         break
-                    print(f"[{self.addr}] {msg['user']}: {msg['text']}")  # отображение в консоли
+                    print(f"[{self.addr}] {msg['user']}: {msg['text']}")
 
-                    self.server.broadcast(msg, sender=self.username)
+                    self.server.broadcast(msg)
 
         except Exception as e:
-
             print(f"[!] Возникло исключение {e} c клиентом {self.addr}")
         finally:
             if self.username:
@@ -36,12 +37,13 @@ class ClientHandler(Thread):
             print(f"[-] Отключен {self.addr}")
 
     def registration(self) -> bool:
-        """заполняет поле username и вносит себя в список(словарь) пользователей на сервере"""
-
+        """Заполняет поле username и вносит себя в список пользователей на сервере."""
         try:
-            self.messenger.send({"user": "Server",
-                                 "text": "Регистрация. Пожалуйста, введите имя:",
-                                 "status": None})
+            self.messenger.send({
+                "user": "Server",
+                "text": "Регистрация. Пожалуйста, введите имя:",
+                "status": None
+            })
             while True:
                 msg = self.messenger.get()
                 if not msg:
@@ -50,14 +52,18 @@ class ClientHandler(Thread):
                 if username:
                     if self.server.add_user(username, self):
                         self.username = username
-                        self.messenger.send({"user": "Server",
-                                             "text": "Регистрация успешно пройдена",
-                                             "status": True})
+                        self.messenger.send({
+                            "user": "Server",
+                            "text": "Регистрация успешно пройдена",
+                            "status": True
+                        })
                         return True
                     else:
-                        self.messenger.send({"user": "Server",
-                                             "text": "Данное имя уже занято. Попробуйте другое",
-                                             "status": False})
+                        self.messenger.send({
+                            "user": "Server",
+                            "text": "Данное имя уже занято. Попробуйте другое",
+                            "status": False
+                        })
         except Exception:
             return False
 
@@ -74,28 +80,24 @@ class ChatServer:
 
     def __init__(self):
         self.clients = {}
-        self.client_lock = Lock() # замок для работы со списком клиентов
-
-        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # Полезная настройка, чтобы порт не "залипал" после перезапуска сервера
-        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.listener.bind((self.HOST, self.PORT))
+        self.client_lock = Lock()
 
     def run(self):
-        self.listener.listen(5)
-        print("Многопоточный сервер запущен...")
-        try:
-            while True:
-                conn, addr = self.listener.accept()
-                handler = ClientHandler(conn, addr, self)
-                handler.start()
-        except KeyboardInterrupt:
-            print("\nСервер останавливает работу")
-        finally:
-            self.listener.close()
+        print("Многопоточный WebSocket-сервер запущен...")
+
+        def handler(ws_conn):
+            """Вызывается автоматически в отдельном потоке на каждое новое подключение."""
+            addr = ws_conn.remote_address
+            client_thread = ClientHandler(ws_conn, addr, self)
+            # Запускаем логику обработки синхронно внутри выделенного потока
+            client_thread.run()
+
+        # Запускаем серверный контекст. Он инкапсулирует всю работу с портами под капотом.
+        with serve(handler, self.HOST, self.PORT) as server:
+            server.serve_forever()
 
     def add_user(self, name: str, client_handler: ClientHandler) -> bool:
-        """если имя не занято, добавляет клиента в словарь"""
+        """Если имя не занято, добавляет клиента в словарь."""
         with self.client_lock:
             if name in self.clients:
                 return False
@@ -109,12 +111,11 @@ class ChatServer:
             if username in self.clients:
                 del self.clients[username]
 
-
-    def broadcast(self, message_dict, sender=None):
+    def broadcast(self, message_dict):
         """Метод для рассылки всем подключенным клиентам."""
         with self.client_lock:
             for username in tuple(self.clients):
-                self.clients[username].messenger.send(message_dict)  # сомнительно, но окэй
+                self.clients[username].messenger.send(message_dict)
 
 
 if __name__ == "__main__":
